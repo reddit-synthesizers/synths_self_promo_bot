@@ -1,0 +1,3 @@
+Hi u/$author, I just wanted to remind you that participation is now required for all submitters.
+
+Please listen to at least one other submission and leave feedback on it within the next $hours hours or your submission will be removed.
