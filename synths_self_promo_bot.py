@@ -16,19 +16,20 @@ class SynthsSelfPromoBot:
     def __init__(self, subreddit_name=DEFAULT_SUBREDDIT_NAME, dry_run=False):
         self.dry_run = dry_run
 
+        self.reddit = praw.Reddit('SynthsSelfPromoBot')
+        self.subreddit = self.reddit.subreddit(subreddit_name)
+
         self.warning_template = Template(
             self.read_text_file('self-promo-warning.txt'))
         self.removal_template = Template(
             self.read_text_file('self-promo-removal.txt'))
 
-        self.reddit = praw.Reddit('SynthsSelfPromoBot')
-        subreddit = self.reddit.subreddit(subreddit_name)
-
-        # thread will be stickied in the hot 2
-        submissions = subreddit.hot(limit=2)
+    def scan(self):
+        submissions = self.subreddit.hot(limit=2)  # thread will be stickied in the hot 2
         self_promo = self.find_self_promo_submission(submissions)
 
-        if self_promo is not None and self_promo.comments.__len__() >= MIN_COMMENTS_TO_START_ENFORCING:
+        if (self_promo is not None  # wait until there's a minimum set of top-level comments before enforcing
+                and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
             self.process_submission(self_promo)
 
     # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
@@ -40,6 +41,7 @@ class SynthsSelfPromoBot:
                     and submission.stickied
                     and submission.title.startswith(THREAD_TITLE)):
                 self_promo = submission
+                break
 
         return self_promo
 
@@ -52,12 +54,11 @@ class SynthsSelfPromoBot:
 
     def process_comment(self, submission, comment):
         # don't act on distinguished mod or deleted comments
-        if (comment.distinguished is not None
-                or self.is_comment_deleted(comment)):
+        if comment.distinguished is not None or self.is_comment_deleted(comment):
             return
 
         age = self.get_comment_age(comment)
-        was_warned = self.has_bot_warning(comment)
+        was_warned = self.was_warned(comment)
 
         if self.is_comment_actionable(submission, comment):
             if age > MINUTES_TO_REMOVE:
@@ -67,36 +68,32 @@ class SynthsSelfPromoBot:
         elif was_warned:
             self.cleanup(comment)
 
+    def remove(self, comment):
+        self.log('Remove', comment)
+
+        if not self.dry_run:
+            self.remove_warning_comment(comment)
+            comment.mod.remove(spam=False, mod_note='OP did not participate in thread.')
+
+            message = self.removal_template.substitute(hours=int(MINUTES_TO_REMOVE / 60))
+            comment.mod.send_removal_message(message, 'Lack of contribution', 'private')
+
     def warn(self, comment):
-        if not self.has_bot_warning(comment):
+        if not self.was_warned(comment):
             self.log('Warn', comment)
 
             if not self.dry_run:
                 messaage = self.warning_template.substitute(
                     author=comment.author.name, hours=int(MINUTES_TO_REMOVE / 60))
-
                 bot_comment = comment.reply(messaage)
                 bot_comment.mod.distinguish(sticky=True)
                 bot_comment.mod.ignore_reports()
-
-    def remove(self, comment):
-        self.log('Remove', comment)
-
-        if not self.dry_run:
-            # clean up the bot's comments
-            self.remove_bot_replies(comment)
-
-            comment.mod.remove(mod_note='OP did not participate in thread.')
-
-            message = self.removal_template.substitute(
-                hours=int(MINUTES_TO_REMOVE / 60))
-            comment.mod.send_removal_message(message, 'Lack of contribution', 'private')
 
     def cleanup(self, comment):
         self.log('Cleanup', comment)
 
         if not self.dry_run:
-            self.remove_bot_replies(comment, 'OP participated in thread, removed warning.')
+            self.remove_warning_comment(comment, 'OP participated in thread, removed warning.')
             comment.mod.approve()
 
     # determine if the user has replied to any comment tree in the thread outside of their own
@@ -121,7 +118,7 @@ class SynthsSelfPromoBot:
         discard_comments.append(comment)  # append the top-level comment
         diff = users_self_promo_comments.difference(set(discard_comments))  # the diff is all other comments
 
-        return (diff.__len__() == 0)
+        return (len(diff) == 0)
 
     # return comment age in minutes
     def get_comment_age(self, comment):
@@ -136,27 +133,29 @@ class SynthsSelfPromoBot:
                 or comment.author is None
                 or comment.body == '[deleted]')
 
-    def find_bot_replies(self, comment):
-        bot_comments = list()
+    def find_warning_comment(self, comment):
+        warning_comment = None
 
-        if comment.replies.__len__() == 0:
+        if len(comment.replies) == 0:
             comment.refresh()
 
         for reply in comment.replies:
             if (reply.author.name == self.reddit.user.me()
                     and reply.distinguished == 'moderator'
                     and not reply.removed):
-                bot_comments.append(reply)
+                warning_comment = reply
+                break
 
-        return bot_comments
+        return warning_comment
 
-    def has_bot_warning(self, comment):
-        return self.find_bot_replies(comment).__len__() > 0
+    def was_warned(self, comment):
+        return self.find_warning_comment(comment) is not None
 
-    def remove_bot_replies(self, comment, mod_note=''):
-        for reply in self.find_bot_replies(comment):
-            reply.mod.remove(
-                mod_note=mod_note)
+    def remove_warning_comment(self, comment, mod_note=''):
+        reply = self.find_warning_comment(comment)
+
+        if reply is not None:
+            reply.mod.remove(spam=False, mod_note=mod_note)
 
     def read_text_file(self, filename):
         text = {}
@@ -168,16 +167,18 @@ class SynthsSelfPromoBot:
         return text
 
     def log(self, action, comment):
-        now = datetime.datetime.now()
+        is_dry_run = '*' if self.dry_run is True else ''
         name = type(self).__name__
-        print(f'[{name}][{now}] {action}: {comment.author.name} \'{comment.body[:15]}...\' ({comment.id})')
+        now = datetime.datetime.now()
+        print(f'{is_dry_run}[{name}][{now}] {action}: {comment.author.name} \'{comment.body[:15]}...\' ({comment.id})')
+
+
+def lambda_handler(event=None, context=None):
+    subreddit_name = os.environ['subreddit_name'] if 'subreddit_name' in os.environ else DEFAULT_SUBREDDIT_NAME
+    dry_run = os.environ['dry_run'] == 'True' if 'dry_run' in os.environ else False
+    self_promo_bot = SynthsSelfPromoBot(subreddit_name, dry_run)
+    self_promo_bot.scan()
 
 
 if __name__ == '__main__':
-    SynthsSelfPromoBot()
-
-
-def lambda_handler(event, context):
-    subreddit_name = os.environ['subreddit_name'] if 'subreddit_name' in os.environ else DEFAULT_SUBREDDIT_NAME
-    dry_run = bool(os.environ['dry_run']) if 'dry_run' in os.environ else False
-    SynthsSelfPromoBot(subreddit_name, dry_run)
+    lambda_handler()
