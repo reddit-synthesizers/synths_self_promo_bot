@@ -28,8 +28,8 @@ class SynthsSelfPromoBot:
         submissions = self.subreddit.hot(limit=2)  # thread will be stickied in the hot 2
         self_promo = self.find_self_promo_submission(submissions)
 
-        if (self_promo is not None  # wait until there's a minimum set of top-level comments before enforcing
-                and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
+        # wait until there's a minimum set of top-level comments before enforcing
+        if (self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
             self.process_submission(self_promo)
 
     # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
@@ -58,25 +58,42 @@ class SynthsSelfPromoBot:
             return
 
         age = self.get_comment_age(comment)
+        actionable = self.is_comment_actionable(submission, comment)
         was_warned = self.was_warned(comment)
 
-        if self.is_comment_actionable(submission, comment):
-            if age > MINUTES_TO_REMOVE:
-                self.remove(comment)
-            elif age > MINUTES_TO_WARN:
-                self.warn(comment)
-        elif was_warned:
+        if age >= MINUTES_TO_REMOVE and actionable and was_warned:
+            self.remove(comment)
+        elif age >= MINUTES_TO_WARN and not actionable and was_warned:
             self.cleanup(comment)
+        elif age >= MINUTES_TO_WARN and actionable and not was_warned:
+            self.warn(comment)
 
     def remove(self, comment):
-        self.log('Remove', comment)
+        warning_comment = self.find_warning_comment()
+        warning_comment_age = self.get_comment_age(warning_comment)
+
+        # defer removal until the user has been warned for some time
+        # this avoids the first commentors being punished with removal
+        # when the MIN_COMMENTS_TO_START_ENFORCING limit is reached
+        if warning_comment_age >= MINUTES_TO_REMOVE:
+            self.log('Remove', comment)
+
+            if not self.dry_run:
+                self.remove_warning_comment(comment)
+
+                comment.mod.remove(
+                    spam=False, mod_note='OP did not participate in thread.')
+
+                message = self.removal_template.substitute(hours=int(MINUTES_TO_REMOVE / 60))
+                comment.mod.send_removal_message(message, 'Lack of contribution', 'private')
+
+    def cleanup(self, comment):
+        self.log('Cleanup', comment)
 
         if not self.dry_run:
-            self.remove_warning_comment(comment)
-            comment.mod.remove(spam=False, mod_note='OP did not participate in thread.')
-
-            message = self.removal_template.substitute(hours=int(MINUTES_TO_REMOVE / 60))
-            comment.mod.send_removal_message(message, 'Lack of contribution', 'private')
+            comment.mod.approve()
+            self.remove_warning_comment(
+                comment, 'OP participated in thread, removed warning.')
 
     def warn(self, comment):
         if not self.was_warned(comment):
@@ -88,13 +105,6 @@ class SynthsSelfPromoBot:
                 bot_comment = comment.reply(messaage)
                 bot_comment.mod.distinguish(sticky=True)
                 bot_comment.mod.ignore_reports()
-
-    def cleanup(self, comment):
-        self.log('Cleanup', comment)
-
-        if not self.dry_run:
-            self.remove_warning_comment(comment, 'OP participated in thread, removed warning.')
-            comment.mod.approve()
 
     # determine if the user has replied to any comment tree in the thread outside of their own
     def is_comment_actionable(self, submission, comment):
@@ -141,8 +151,8 @@ class SynthsSelfPromoBot:
 
         for reply in comment.replies:
             if (reply.author.name == self.reddit.user.me()
-                    and reply.distinguished == 'moderator'
-                    and not reply.removed):
+                    and not reply.removed
+                    and reply.distinguished == 'moderator'):
                 warning_comment = reply
                 break
 
