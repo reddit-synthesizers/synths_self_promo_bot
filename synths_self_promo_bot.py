@@ -1,8 +1,8 @@
+from string import Template
+
 import datetime
 import os
 import praw
-
-from string import Template
 
 DEFAULT_SUBREDDIT_NAME = 'synthesizers'
 THREAD_TITLE = 'Self-Promotion Roundup'
@@ -33,7 +33,8 @@ class SynthsSelfPromoBot:
             self.process_submission(self_promo)
 
     # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
-    def find_self_promo_submission(self, submissions):
+    @staticmethod
+    def find_self_promo_submission(submissions):
         self_promo = None
 
         for submission in submissions:
@@ -69,7 +70,7 @@ class SynthsSelfPromoBot:
             self.warn(comment)
 
     def remove(self, comment):
-        warning_comment = self.find_warning_comment()
+        warning_comment = self.find_warning_comment(comment)
         warning_comment_age = self.get_comment_age(warning_comment)
 
         # defer removal until the user has been warned for some time
@@ -128,17 +129,18 @@ class SynthsSelfPromoBot:
         discard_comments.append(comment)  # append the top-level comment
         diff = users_self_promo_comments.difference(set(discard_comments))  # the diff is all other comments
 
-        return (len(diff) == 0)
+        return len(diff) == 0
 
     # return comment age in minutes
-    def get_comment_age(self, comment):
+    @staticmethod
+    def get_comment_age(comment):
         now = datetime.datetime.now()
         created = datetime.datetime.fromtimestamp(comment.created_utc)
         age = now - created
         return age.total_seconds() / 60
 
-    # I don't know of a better way
-    def is_comment_deleted(self, comment):
+    @staticmethod
+    def is_comment_deleted(comment):
         return (comment.collapsed_reason_code == 'DELETED'
                 or comment.author is None
                 or comment.body == '[deleted]')
@@ -167,12 +169,10 @@ class SynthsSelfPromoBot:
         if reply is not None:
             reply.mod.remove(spam=False, mod_note=mod_note)
 
-    def read_text_file(self, filename):
-        text = {}
-
-        file = open(filename, 'r')
-        text = file.read()
-        file.close()
+    @staticmethod
+    def read_text_file(filename):
+        with open(filename, encoding='utf-8') as file:
+            text = file.read()
 
         return text
 
