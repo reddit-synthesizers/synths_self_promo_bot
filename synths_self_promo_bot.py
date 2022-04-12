@@ -22,8 +22,11 @@ class SynthsSelfPromoBot:
 
         self.warning_template = Template(
             self.read_text_file('self-promo-warning.txt'))
+
         self.removal_template = Template(
             self.read_text_file('self-promo-removal.txt'))
+
+        self.contributors_cache = None
 
     def scan(self):
         self_promo = self.find_self_promo_submission()
@@ -38,9 +41,7 @@ class SynthsSelfPromoBot:
         self_promo = None
 
         for submission in self.subreddit.hot(limit=2):  # thread will be stickied in the hot 2
-            if (submission.distinguished
-                    and submission.stickied
-                    and submission.title.startswith(THREAD_TITLE)):
+            if (submission.distinguished and submission.stickied and submission.title.startswith(THREAD_TITLE)):
                 self_promo = submission
                 break
 
@@ -51,15 +52,15 @@ class SynthsSelfPromoBot:
         submission.comments.replace_more(limit=None)
 
         for comment in submission.comments:
-            self.process_comment(submission, comment)
+            self.process_comment(comment)
 
-    def process_comment(self, submission, comment):
+    def process_comment(self, comment):
         # don't act on distinguished mod or deleted comments
         if comment.distinguished is not None or self.is_comment_deleted(comment):
             return
 
         age = self.get_comment_age(comment)
-        actionable = self.is_comment_actionable(submission, comment)
+        actionable = self.is_comment_actionable(comment)
         was_warned = self.was_warned(comment)
 
         if age >= MINUTES_TO_REMOVE and actionable and was_warned:
@@ -81,10 +82,7 @@ class SynthsSelfPromoBot:
 
             if not self.dry_run:
                 self.remove_warning_comment(comment)
-
-                comment.mod.remove(
-                    spam=False, mod_note='OP did not participate in thread.')
-
+                comment.mod.remove(spam=False, mod_note='OP did not participate in thread.')
                 message = self.removal_template.substitute(hours=int(MINUTES_TO_REMOVE / 60))
                 comment.mod.send_removal_message(message, 'Lack of contribution', 'private')
 
@@ -108,14 +106,14 @@ class SynthsSelfPromoBot:
                 bot_comment.mod.ignore_reports()
 
     # determine if the user has replied to any comment tree in the thread outside of their own
-    def is_comment_actionable(self, submission, comment):
+    def is_comment_actionable(self, comment):
         return ((not comment.approved
                  or not comment.distinguished == 'moderator'
-                 or not comment.removed
+                 or not comment.retmoved
                  or not self.is_comment_deleted(comment))
-                and not self.did_user_contribute(submission, comment))
+                and not self.did_user_contribute(comment))
 
-    def did_user_contribute(self, submission, comment):
+    def did_user_contribute(self, comment):
         return comment.author.name in self.contributors_cache
 
     def find_warning_comment(self, comment):
@@ -142,7 +140,7 @@ class SynthsSelfPromoBot:
         if reply is not None:
             reply.mod.remove(spam=False, mod_note=mod_note)
 
-    @ staticmethod
+    @staticmethod
     def build_contributors_cache(submission):
         cache = set()
 
@@ -157,20 +155,20 @@ class SynthsSelfPromoBot:
 
         return cache
 
-    @ staticmethod
+    @staticmethod
     def get_comment_age(comment):
         now = datetime.datetime.now()
         created = datetime.datetime.fromtimestamp(comment.created_utc)
         age = now - created
         return age.total_seconds() / 60
 
-    @ staticmethod
+    @staticmethod
     def is_comment_deleted(comment):
         return (comment.collapsed_reason_code == 'DELETED'
                 or comment.author is None
                 or comment.body == '[deleted]')
 
-    @ staticmethod
+    @staticmethod
     def read_text_file(filename):
         with open(filename, encoding='utf-8') as file:
             text = file.read()
