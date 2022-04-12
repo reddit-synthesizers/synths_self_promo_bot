@@ -4,6 +4,7 @@ import datetime
 import os
 import praw
 
+
 DEFAULT_SUBREDDIT_NAME = 'synthesizers'
 THREAD_TITLE = 'Self-Promotion Roundup'
 
@@ -25,19 +26,18 @@ class SynthsSelfPromoBot:
             self.read_text_file('self-promo-removal.txt'))
 
     def scan(self):
-        submissions = self.subreddit.hot(limit=2)  # thread will be stickied in the hot 2
-        self_promo = self.find_self_promo_submission(submissions)
+        self_promo = self.find_self_promo_submission()
+        self.contributors_cache = self.build_contributors_cache(self_promo)
 
         # wait until there's a minimum set of top-level comments before enforcing
         if (self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
             self.process_submission(self_promo)
 
     # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
-    @staticmethod
-    def find_self_promo_submission(submissions):
+    def find_self_promo_submission(self):
         self_promo = None
 
-        for submission in submissions:
+        for submission in self.subreddit.hot(limit=2):  # thread will be stickied in the hot 2
             if (submission.distinguished
                     and submission.stickied
                     and submission.title.startswith(THREAD_TITLE)):
@@ -109,41 +109,14 @@ class SynthsSelfPromoBot:
 
     # determine if the user has replied to any comment tree in the thread outside of their own
     def is_comment_actionable(self, submission, comment):
-        if (comment.approved  # dont act on mod approved, distinguished, removed, or deleted comments
-                or comment.distinguished == 'moderator'
-                or comment.removed
-                or self.is_comment_deleted(comment)):
-            return False
+        return ((not comment.approved
+                 or not comment.distinguished == 'moderator'
+                 or not comment.removed
+                 or not self.is_comment_deleted(comment))
+                and not self.did_user_contribute(submission, comment))
 
-        users_self_promo_comments = set()  # find all comments in the self-promo thread by the user
-        users_new_comments = self.reddit.redditor(
-            comment.author.name).comments.new(limit=100)  # this might not scale with really active users
-
-        for new_comment in users_new_comments:  # collect all of this user's comments in the self promo thread
-            if (new_comment.submission.id == submission.id  # a comment's submission id is the submission it's in
-                    and not new_comment.parent_id.startswith('t3_')):  # t3_ indicates a top-level comment
-                users_self_promo_comments.add(new_comment)
-
-        comment.replies.replace_more(limit=None)  # get the user's commment's reply tree
-        discard_comments = comment.replies.list()
-        discard_comments.append(comment)  # append the top-level comment
-        diff = users_self_promo_comments.difference(set(discard_comments))  # the diff is all other comments
-
-        return len(diff) == 0
-
-    # return comment age in minutes
-    @staticmethod
-    def get_comment_age(comment):
-        now = datetime.datetime.now()
-        created = datetime.datetime.fromtimestamp(comment.created_utc)
-        age = now - created
-        return age.total_seconds() / 60
-
-    @staticmethod
-    def is_comment_deleted(comment):
-        return (comment.collapsed_reason_code == 'DELETED'
-                or comment.author is None
-                or comment.body == '[deleted]')
+    def did_user_contribute(self, submission, comment):
+        return comment.author.name in self.contributors_cache
 
     def find_warning_comment(self, comment):
         warning_comment = None
@@ -169,7 +142,35 @@ class SynthsSelfPromoBot:
         if reply is not None:
             reply.mod.remove(spam=False, mod_note=mod_note)
 
-    @staticmethod
+    @ staticmethod
+    def build_contributors_cache(submission):
+        cache = set()
+
+        submission.comments.replace_more(limit=None)
+
+        for comment in submission.comments:
+            if comment.author is not None:
+                top_level_author_name = comment.author.name
+                for reply in comment.replies.list():
+                    if reply.author is not None and reply.author.name != top_level_author_name:
+                        cache.add(comment.author.name)
+
+        return cache
+
+    @ staticmethod
+    def get_comment_age(comment):
+        now = datetime.datetime.now()
+        created = datetime.datetime.fromtimestamp(comment.created_utc)
+        age = now - created
+        return age.total_seconds() / 60
+
+    @ staticmethod
+    def is_comment_deleted(comment):
+        return (comment.collapsed_reason_code == 'DELETED'
+                or comment.author is None
+                or comment.body == '[deleted]')
+
+    @ staticmethod
     def read_text_file(filename):
         with open(filename, encoding='utf-8') as file:
             text = file.read()
