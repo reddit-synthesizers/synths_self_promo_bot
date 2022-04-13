@@ -91,8 +91,7 @@ class SynthsSelfPromoBot:
 
         if not self.dry_run:
             comment.mod.approve()
-            self.remove_warning_comment(
-                comment, 'OP participated in thread, removed warning.')
+            self.remove_warning_comment(comment, 'OP participated in thread, removed warning.')
 
     def warn(self, comment):
         if not self.was_warned(comment):
@@ -151,7 +150,7 @@ class SynthsSelfPromoBot:
                 top_level_author_name = comment.author.name
                 for reply in comment.replies.list():
                     if reply.author is not None and reply.author.name != top_level_author_name:
-                        cache.add(comment.author.name)
+                        cache.add(reply.author.name)
 
         return cache
 
