@@ -30,7 +30,6 @@ class SynthsSelfPromoBot:
 
     def scan(self):
         self_promo = self.find_self_promo_submission()
-        self.contributors_cache = self.build_contributors_cache(self_promo)
 
         # wait until there's a minimum set of top-level comments before enforcing
         if (self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
@@ -49,7 +48,7 @@ class SynthsSelfPromoBot:
 
     # Walk through the top-level comments and warn anyone who did not leave a comment elswhere in the thread
     def process_submission(self, submission):
-        submission.comments.replace_more(limit=None)
+        self.contributors_cache = self.build_contributors_cache(submission)
 
         for comment in submission.comments:
             self.process_comment(comment)
@@ -122,7 +121,7 @@ class SynthsSelfPromoBot:
             comment.refresh()
 
         for reply in comment.replies:
-            if (reply.author.name == self.reddit.user.me()
+            if (reply.author.name == self.reddit.config.username
                     and not reply.removed
                     and reply.distinguished == 'moderator'):
                 warning_comment = reply
