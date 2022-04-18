@@ -20,9 +20,9 @@ class SynthsSelfPromoBot:
         self.subreddit = self.reddit.subreddit(subreddit_name)
 
         self.warning_template = Template(
-            self.read_text_file('self-promo-warning.txt'))
+            self.read_template_file('self-promo-warning.txt'))
         self.removal_template = Template(
-            self.read_text_file('self-promo-removal.txt'))
+            self.read_template_file('self-promo-removal.txt'))
 
         self.contributors_cache = None
 
@@ -114,6 +114,9 @@ class SynthsSelfPromoBot:
     def did_user_contribute(self, comment):
         return comment.author.name in self.contributors_cache
 
+    def was_warned(self, comment):
+        return self.find_warning_comment(comment) is not None
+
     def find_warning_comment(self, comment):
         warning_comment = None
 
@@ -129,15 +132,13 @@ class SynthsSelfPromoBot:
 
         return warning_comment
 
-    def was_warned(self, comment):
-        return self.find_warning_comment(comment) is not None
-
     def remove_warning_comment(self, comment, mod_note=''):
         reply = self.find_warning_comment(comment)
 
         if reply is not None:
             reply.mod.remove(spam=False, mod_note=mod_note)
 
+    # create a set of all contributors who posted to comment threads outside of their own
     @staticmethod
     def build_contributors_cache(submission):
         cache = set()
@@ -167,7 +168,7 @@ class SynthsSelfPromoBot:
                 or comment.body == '[deleted]')
 
     @staticmethod
-    def read_text_file(filename):
+    def read_template_file(filename):
         with open(filename, encoding='utf-8') as file:
             text = file.read()
 
