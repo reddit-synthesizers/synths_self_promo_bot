@@ -4,7 +4,6 @@ import datetime
 import os
 import praw
 
-
 DEFAULT_SUBREDDIT_NAME = 'synthesizers'
 THREAD_TITLE = 'Self-Promotion Roundup'
 
@@ -22,7 +21,6 @@ class SynthsSelfPromoBot:
 
         self.warning_template = Template(
             self.read_text_file('self-promo-warning.txt'))
-
         self.removal_template = Template(
             self.read_text_file('self-promo-removal.txt'))
 
@@ -32,7 +30,8 @@ class SynthsSelfPromoBot:
         self_promo = self.find_self_promo_submission()
 
         # wait until there's a minimum set of top-level comments before enforcing
-        if (self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
+        if (self_promo is not None
+                and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
             self.process_submission(self_promo)
 
     # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
@@ -40,7 +39,9 @@ class SynthsSelfPromoBot:
         self_promo = None
 
         for submission in self.subreddit.hot(limit=2):  # thread will be stickied in the hot 2
-            if (submission.distinguished and submission.stickied and submission.title.startswith(THREAD_TITLE)):
+            if (submission.distinguished
+                    and submission.stickied
+                    and submission.title.startswith(THREAD_TITLE)):
                 self_promo = submission
                 break
 
@@ -60,18 +61,24 @@ class SynthsSelfPromoBot:
 
         age = self.get_comment_age(comment)
         actionable = self.is_comment_actionable(comment)
+        user_contributed = self.did_user_contribute(comment)
         was_warned = self.was_warned(comment)
 
-        if age >= MINUTES_TO_REMOVE and actionable and was_warned:
+        if age >= MINUTES_TO_REMOVE and actionable and not user_contributed and was_warned:
             self.remove(comment)
-        elif age >= MINUTES_TO_WARN and not actionable and was_warned:
+        elif age >= MINUTES_TO_WARN and not actionable and user_contributed and was_warned:
             self.cleanup(comment)
-        elif age >= MINUTES_TO_WARN and actionable and not was_warned:
+        elif age >= MINUTES_TO_WARN and actionable and not user_contributed and not was_warned:
             self.warn(comment)
 
     def remove(self, comment):
         warning_comment = self.find_warning_comment(comment)
         warning_comment_age = self.get_comment_age(warning_comment)
+
+        print(comment.approved)
+        print(comment.distinguished == 'moderator')
+        print(comment.removed)
+        print(self.is_comment_deleted(comment))
 
         # defer removal until the user has been warned for some time
         # this avoids the first commentors being punished with removal
@@ -81,9 +88,12 @@ class SynthsSelfPromoBot:
 
             if not self.dry_run:
                 self.remove_warning_comment(comment)
-                comment.mod.remove(spam=False, mod_note='OP did not participate in thread.')
-                message = self.removal_template.substitute(hours=int(MINUTES_TO_REMOVE / 60))
-                comment.mod.send_removal_message(message, 'Lack of contribution', 'private')
+                comment.mod.remove(
+                    spam=False, mod_note='OP did not participate in thread.')
+                message = self.removal_template.substitute(
+                    hours=int(MINUTES_TO_REMOVE / 60))
+                comment.mod.send_removal_message(
+                    message, 'Lack of contribution', 'private')
 
     def cleanup(self, comment):
         self.log('Cleanup', comment)
@@ -105,11 +115,10 @@ class SynthsSelfPromoBot:
 
     # determine if the user has replied to any comment tree in the thread outside of their own
     def is_comment_actionable(self, comment):
-        return ((not comment.approved
-                 or not comment.distinguished == 'moderator'
-                 or not comment.retmoved
-                 or not self.is_comment_deleted(comment))
-                and not self.did_user_contribute(comment))
+        return (not comment.approved
+                and not comment.distinguished == 'moderator'
+                and not comment.removed
+                and not self.is_comment_deleted(comment))
 
     def did_user_contribute(self, comment):
         return comment.author.name in self.contributors_cache
