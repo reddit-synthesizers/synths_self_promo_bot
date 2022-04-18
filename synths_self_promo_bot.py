@@ -52,23 +52,19 @@ class SynthsSelfPromoBot:
         self.contributors_cache = self.build_contributors_cache(submission)
 
         for comment in submission.comments:
-            self.process_comment(comment)
+            if self.is_comment_actionable(comment):
+                self.process_comment(comment)
 
     def process_comment(self, comment):
-        # don't act on distinguished mod or deleted comments
-        if comment.distinguished is not None or self.is_comment_deleted(comment):
-            return
-
-        age = self.get_comment_age(comment)
-        actionable = self.is_comment_actionable(comment)
+        comment_age = self.get_comment_age(comment)
         user_contributed = self.did_user_contribute(comment)
         was_warned = self.was_warned(comment)
 
-        if age >= MINUTES_TO_REMOVE and actionable and not user_contributed and was_warned:
+        if comment_age >= MINUTES_TO_REMOVE and not user_contributed and was_warned:
             self.remove(comment)
-        elif age >= MINUTES_TO_WARN and not actionable and user_contributed and was_warned:
+        elif comment_age >= MINUTES_TO_WARN and user_contributed and was_warned:
             self.cleanup(comment)
-        elif age >= MINUTES_TO_WARN and actionable and not user_contributed and not was_warned:
+        elif comment_age >= MINUTES_TO_WARN and not user_contributed and not was_warned:
             self.warn(comment)
 
     def remove(self, comment):
