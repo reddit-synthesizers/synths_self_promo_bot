@@ -75,11 +75,6 @@ class SynthsSelfPromoBot:
         warning_comment = self.find_warning_comment(comment)
         warning_comment_age = self.get_comment_age(warning_comment)
 
-        print(comment.approved)
-        print(comment.distinguished == 'moderator')
-        print(comment.removed)
-        print(self.is_comment_deleted(comment))
-
         # defer removal until the user has been warned for some time
         # this avoids the first commentors being punished with removal
         # when the MIN_COMMENTS_TO_START_ENFORCING limit is reached
