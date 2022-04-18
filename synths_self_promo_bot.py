@@ -34,19 +34,6 @@ class SynthsSelfPromoBot:
                 and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
             self.process_submission(self_promo)
 
-    # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
-    def find_self_promo_submission(self):
-        self_promo = None
-
-        for submission in self.subreddit.hot(limit=2):  # thread will be stickied in the hot 2
-            if (submission.distinguished
-                    and submission.stickied
-                    and submission.title.startswith(THREAD_TITLE)):
-                self_promo = submission
-                break
-
-        return self_promo
-
     # Walk through the top-level comments and warn anyone who did not leave a comment elswhere in the thread
     def process_submission(self, submission):
         self.contributors_cache = self.build_contributors_cache(submission)
@@ -103,6 +90,19 @@ class SynthsSelfPromoBot:
                 bot_comment = comment.reply(messaage)
                 bot_comment.mod.distinguish(sticky=True)
                 bot_comment.mod.ignore_reports()
+
+    # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
+    def find_self_promo_submission(self):
+        self_promo = None
+
+        for submission in self.subreddit.hot(limit=2):  # thread will be stickied in the hot 2
+            if (submission.distinguished
+                    and submission.stickied
+                    and submission.title.startswith(THREAD_TITLE)):
+                self_promo = submission
+                break
+
+        return self_promo
 
     # determine if the user has replied to any comment tree in the thread outside of their own
     def is_comment_actionable(self, comment):
