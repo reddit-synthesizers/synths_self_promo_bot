@@ -9,7 +9,7 @@ THREAD_TITLE = 'Self-Promotion Roundup'
 
 MINUTES_TO_WARN = 5
 MINUTES_TO_REMOVE = 120
-MIN_COMMENTS_TO_START_ENFORCING = 5
+MIN_COMMENTS_TO_START_ENFORCING = 3
 
 
 class SynthsSelfPromoBot:
@@ -30,8 +30,7 @@ class SynthsSelfPromoBot:
         self_promo = self.find_self_promo_submission()
 
         # wait until there's a minimum set of top-level comments before enforcing
-        if (self_promo is not None
-                and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
+        if (self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
             self.process_submission(self_promo)
 
     # Walk through the top-level comments and warn anyone who did not leave a comment elswhere in the thread
