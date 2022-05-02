@@ -1,7 +1,7 @@
-from string import Template
-
 import datetime
 import os
+from string import Template
+
 import praw
 
 DEFAULT_SUBREDDIT_NAME = 'synthesizers'
@@ -30,7 +30,7 @@ class SynthsSelfPromoBot:
         self_promo = self.find_self_promo_submission()
 
         # wait until there's a minimum set of top-level comments before enforcing
-        if (self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
+        if self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING:
             self.process_submission(self_promo)
 
     # Walk through the top-level comments and warn anyone who did not leave a comment elswhere in the thread
@@ -158,7 +158,7 @@ class SynthsSelfPromoBot:
         now = datetime.datetime.now()
         created = datetime.datetime.fromtimestamp(comment.created_utc)
         age = now - created
-        return age.total_seconds() / 60
+        return int(age.total_seconds() / 60)
 
     @staticmethod
     def is_comment_deleted(comment):
