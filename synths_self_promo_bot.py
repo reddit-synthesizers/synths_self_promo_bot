@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 from string import Template
 
@@ -24,19 +25,20 @@ class SynthsSelfPromoBot:
         self.removal_template = Template(
             self.read_template_file('self-promo-removal.txt'))
 
+        self.overrides = self.read_json_file('self-promo-overrides.json')
         self.contributors_cache = None
 
     def scan(self):
-        self_promo = self.find_self_promo_submission()
+        self_promo_submission = self.find_self_promo_submission()
 
         # wait until there's a minimum set of top-level comments before enforcing
-        if self_promo is not None and len(self_promo.comments) >= MIN_COMMENTS_TO_START_ENFORCING:
-            self.process_submission(self_promo)
+        if (self_promo_submission is not None
+                and len(self_promo_submission.comments) >= MIN_COMMENTS_TO_START_ENFORCING):
+            self.contributors_cache = self.build_contributors_cache(self_promo_submission)
+            self.process_submission(self_promo_submission)
 
     # Walk through the top-level comments and warn anyone who did not leave a comment elswhere in the thread
     def process_submission(self, submission):
-        self.contributors_cache = self.build_contributors_cache(submission)
-
         for comment in submission.comments:
             if self.is_comment_actionable(comment):
                 self.process_comment(comment)
@@ -61,8 +63,6 @@ class SynthsSelfPromoBot:
         # this avoids the first commentors being punished with removal
         # when the MIN_COMMENTS_TO_START_ENFORCING limit is reached
         if warning_comment_age >= MINUTES_TO_REMOVE:
-            self.log('Remove', comment)
-
             if not self.dry_run:
                 self.remove_warning_comment(comment)
                 comment.mod.remove(
@@ -72,23 +72,24 @@ class SynthsSelfPromoBot:
                 comment.mod.send_removal_message(
                     message, 'Lack of contribution', 'private')
 
-    def cleanup(self, comment):
-        self.log('Cleanup', comment)
+            self.log('Remove', comment)
 
+    def cleanup(self, comment):
         if not self.dry_run:
             comment.mod.approve()
             self.remove_warning_comment(comment, 'OP participated in thread, removed warning.')
 
-    def warn(self, comment):
-        if not self.was_warned(comment):
-            self.log('Warn', comment)
+        self.log('Cleanup', comment)
 
-            if not self.dry_run:
-                messaage = self.warning_template.substitute(
-                    author=comment.author.name, hours=int(MINUTES_TO_REMOVE / 60))
-                bot_comment = comment.reply(messaage)
-                bot_comment.mod.distinguish(sticky=True)
-                bot_comment.mod.ignore_reports()
+    def warn(self, comment):
+        if not self.dry_run:
+            messaage = self.warning_template.substitute(
+                author=comment.author.name, hours=int(MINUTES_TO_REMOVE / 60))
+            bot_comment = comment.reply(messaage)
+            bot_comment.mod.distinguish(sticky=True)
+            bot_comment.mod.ignore_reports()
+
+        self.log('Warn', comment)
 
     # Find the self promo thread. If active, it's in the top 2 of the hot stream, and stickied.
     def find_self_promo_submission(self):
@@ -108,7 +109,8 @@ class SynthsSelfPromoBot:
         return (not comment.approved
                 and not comment.distinguished == 'moderator'
                 and not comment.removed
-                and not self.is_comment_deleted(comment))
+                and not self.is_comment_deleted(comment)
+                and comment.author not in self.overrides["approved"])
 
     def did_user_contribute(self, comment):
         return comment.author.name in self.contributors_cache
@@ -172,6 +174,13 @@ class SynthsSelfPromoBot:
             text = file.read()
 
         return text
+
+    @staticmethod
+    def read_json_file(filename):
+        with open(filename, encoding='utf-8') as file:
+            data = json.load(file)
+
+        return data
 
     def log(self, action, comment):
         is_dry_run = '*' if self.dry_run is True else ''
