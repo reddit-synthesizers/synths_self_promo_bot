@@ -1,4 +1,4 @@
-# r/synthesizers rules bot
+# r/synthesizers self-promo bot
 
 This bot monitors the weekly self-promotion thread. 
 
