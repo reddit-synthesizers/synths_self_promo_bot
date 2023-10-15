@@ -14,18 +14,18 @@ MIN_COMMENTS_TO_START_ENFORCING = 3
 
 
 class SynthsSelfPromoBot:
-    def __init__(self, subreddit_name=DEFAULT_SUBREDDIT_NAME, dry_run=False):
+    def __init__(self, subreddit_name=DEFAULT_SUBREDDIT_NAME, dry_run=False, reddit=None):
         self.dry_run = dry_run
 
-        self.reddit = praw.Reddit('SynthsSelfPromoBot')
+        self.reddit = reddit if reddit else praw.Reddit('SynthsSelfPromoBot')
         self.subreddit = self.reddit.subreddit(subreddit_name)
 
         self.warning_template = Template(
-            self.read_template_file('self-promo-warning.txt'))
+            self.read_template_file('data/synths_self_promo_bot/self-promo-warning.txt'))
         self.removal_template = Template(
-            self.read_template_file('self-promo-removal.txt'))
+            self.read_template_file('data/synths_self_promo_bot/self-promo-removal.txt'))
 
-        self.overrides = self.read_json_file('self-promo-overrides.json')
+        self.overrides = self.read_json_file('data/synths_self_promo_bot/self-promo-overrides.json')
         self.contributors_cache = None
 
     def scan(self):
@@ -96,8 +96,7 @@ class SynthsSelfPromoBot:
         self_promo = None
 
         for submission in self.subreddit.hot(limit=2):  # thread will be stickied in the hot 2
-            if (submission.distinguished
-                    and submission.stickied
+            if (submission.stickied
                     and submission.title.startswith(THREAD_TITLE)):
                 self_promo = submission
                 break
@@ -106,11 +105,11 @@ class SynthsSelfPromoBot:
 
     # determine if the user has replied to any comment tree in the thread outside of their own
     def is_comment_actionable(self, comment):
-        return (not comment.approved
-                and not comment.distinguished == 'moderator'
-                and not comment.removed
-                and not self.is_comment_deleted(comment)
-                and comment.author not in self.overrides["approved"])
+        return not (comment.approved
+                    or comment.distinguished == 'moderator'
+                    or comment.removed
+                    or self.is_comment_deleted(comment)
+                    or comment.author in self.overrides["approved"])
 
     def did_user_contribute(self, comment):
         return comment.author.name in self.contributors_cache
